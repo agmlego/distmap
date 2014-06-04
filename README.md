@@ -10,12 +10,12 @@ Putting it up on github because people on IRC told me to. ;-P
 Prerequisites
 =============
 
-* pymaps
-* apachelog
-* GeoIP (and a local database therefor)
+* [pygmaps](https://code.google.com/p/pygmaps/)
+* [apachelog](https://pypi.python.org/pypi/apachelog/1.0)
+* [termcolor](https://pypi.python.org/pypi/termcolor/1.1.0)
+* [GeoIP2](http://geoip2.readthedocs.org/en/latest/) (and a [local "GeoLite2 City" database](http://dev.maxmind.com/geoip/geoip2/geolite2/) therefor)
 
 TODO
 ====
-* IPv6 addresses seem to choke it, I cannot remember why at the moment.
 * Some form of charting or data tracking beyond the last 24 hours would be nice (24 hours may be solely based on our logrotate schedule)
 * Not putting all the points into the generated map page source would be good. Takes forever to load on slower connections or browsers with shitty JS engines
