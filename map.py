@@ -29,6 +29,9 @@
 
 from __future__ import with_statement
 from pprint import pprint
+
+import cPickle as pickle
+
 import pygmaps
 import apachelog
 import os.path
@@ -38,7 +41,9 @@ import sys
 from termcolor import cprint
 
 users = {}
-mirrors = ('archlinux', 'centos', 'cygwin', 'debian', 'debian-cd', 'fedora', 'gentoo', 'iso', 'kernel', 'pub', 'raspbian', 'slackware', 'ubcd', 'ubuntu', 'ubuntu-releases', 'unity')
+mirrors = ('archlinux', 'centos', 'cygwin', 'debian', 'debian-cd', 'fedora',
+           'gentoo', 'iso', 'kernel', 'pub', 'raspbian', 'slackware', 'tails',
+           'ubcd', 'ubuntu', 'ubuntu-releases', 'unity')
 mirror_use = {}
 skipped_http = []
 skipped_ftp = []
@@ -73,6 +78,8 @@ def add_data(protocol,ip,arch,bytes):
     try:
         gir = gi.city(ip)
         loc = (gir.location.latitude,gir.location.longitude)
+        if None in loc:
+            raise geoip2.errors.AddressNotFoundError('Not good')
     except geoip2.errors.AddressNotFoundError:
         if ip not in skipped_http:
             if protocol == 'http':
@@ -83,7 +90,7 @@ def add_data(protocol,ip,arch,bytes):
         if ip not in skipped_rsync:
             if protocol == 'rsync':
                 skipped_rsync.append(ip)
-        cprint('(%4s) %15s: %12s -- %s SKIPPED!'%(protocol,ip,bytes,arch),'red')
+        cprint('(%4s) %15s: %12s -- %s SKIPPED!i Address not found.'%(protocol,ip,bytes,arch),'red')
         return
 
     if arch == 'pub':
@@ -93,10 +100,10 @@ def add_data(protocol,ip,arch,bytes):
     if arch in mirrors:
         if loc not in users.keys():
             users[loc] = {}
-            cprint('New location! %s'%str(loc),'green')
+            #cprint('New location! %s'%str(loc),'green')
         if arch not in users[loc].keys():
             users[loc][arch] = {}
-            cprint('New Arch! %s'%arch,'yellow')
+            #cprint('New Arch! %s'%arch,'yellow')
         if ip not in users[loc][arch]:
             users[loc][arch][ip] = int(bytes)
             color = ('blue','cyan')[':' in ip]
@@ -118,76 +125,86 @@ def add_data(protocol,ip,arch,bytes):
                 if ip not in skipped_rsync:
                     if protocol == 'rsync':
                         skipped_rsync.append(ip)
-                cprint('(%4s) %15s: %12s -- %s SKIPPED!'%(protocol,ip,bytes,arch),'magenta')
+                cprint('(%4s) %15s: %12s -- %s SKIPPED! Bad line in log.'%(protocol,ip,bytes,arch),'magenta')
                 return
 
-
-
-
-## HTTP from apache2/access.log ##
-format = r'%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"'
-p = apachelog.parser(format)
-with open(APACHE_LOG) as log:
-    lines = log.readlines()
-    for line in lines[0:]:
-        data = p.parse(line)
-        status = data['%>s']
-        if not (status.startswith('2') or status.startswith('3')):
-            continue
-
-        bytes = data['%b']
-        if bytes == '-':
-            bytes = '0'
-
-        item = data['%r']
-        arch = item[item.find('/')+1:item.find('/',item.find('/')+1)]
-
-        ip = data['%h']
-        add_data('http',ip,arch,bytes)
-## END HTTP data ##
-
-## FTP from vsftpd/access.log ##
-with open(VSFTPD_LOG) as log:
-    lines = log.readlines()
-    for line in lines[0:]:
-        if "OK DOWNLOAD" not in line:
-            continue
-        ip = line[line.find('"')+1:line.find('"',line.find('"')+1)]
-        arch = line[line.find('"/')+2:line.find('/',line.find('"/')+2)]
-        if ' bytes' in line:
-            bytes = line[line.rfind('", ')+3:line.rfind(' bytes')]
-        else:
-            bytes = '0'
-        add_data('ftp',ip,arch,bytes)
-## END FTP data ##
-
-## RSYNC from rsyncd/access.log ##
-with open(RSYNCD_LOG) as log:
-    lines = log.readlines()
-    xfers = {}
-    id = 0
-    for line in lines[0:]:
-        if line.startswith(':'):
-            if id in xfers:
-                del xfers[id]
-            continue
-        id = int(line[line.find('[')+1:line.find(']')])
-        if 'connect from' in line:
-            ip = line[line.find('(')+1:line.find(')')]
-            xfers[id] = {'ip':ip}
-        if id in xfers:
-            if 'rsync on' in line:
-                arch = line[line.find('on ')+3:line.find(' from')]
-                arch = arch[:arch.find('/')]
-                xfers[id]['arch'] = arch
-            if 'failed' in line:
-                del xfers[id]
+if '--no-parse' in sys.argv:
+    users = pickle.load(open('users.pkl'))
+    mirror_use = pickle.load(open('mirror_use.pkl'))
+    skipped_http = pickle.load(open('skip_http.pkl'))
+    skipped_ftp = pickle.load(open('skip_ftp.pkl'))
+    skipped_rsync = pickle.load(open('skip_rsync.pkl'))
+else:
+    
+    ## HTTP from apache2/access.log ##
+    format = r'%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"'
+    p = apachelog.parser(format)
+    with open(APACHE_LOG) as log:
+        lines = log.readlines()
+        for line in lines[0:]:
+            data = p.parse(line)
+            status = data['%>s']
+            if not (status.startswith('2') or status.startswith('3')):
                 continue
-            if 'sent' in line:
-                bytes = line[line.find('sent ')+5:line.find(' bytes')]
-                add_data('rsync',xfers[id]['ip'],xfers[id]['arch'],bytes)
-                del xfers[id]
-## END RSYNC data ##
+    
+            bytes = data['%b']
+            if bytes == '-':
+                bytes = '0'
+    
+            item = data['%r']
+            arch = item[item.find('/')+1:item.find('/',item.find('/')+1)]
+    
+            ip = data['%h']
+            add_data('http',ip,arch,bytes)
+    ## END HTTP data ##
+    
+    ## FTP from vsftpd/access.log ##
+    with open(VSFTPD_LOG) as log:
+        lines = log.readlines()
+        for line in lines[0:]:
+            if "OK DOWNLOAD" not in line:
+                continue
+            ip = line[line.find('"')+1:line.find('"',line.find('"')+1)]
+            arch = line[line.find('"/')+2:line.find('/',line.find('"/')+2)]
+            if ' bytes' in line:
+                bytes = line[line.rfind('", ')+3:line.rfind(' bytes')]
+            else:
+                bytes = '0'
+            add_data('ftp',ip,arch,bytes)
+    ## END FTP data ##
+    
+    ## RSYNC from rsyncd/access.log ##
+    with open(RSYNCD_LOG) as log:
+        lines = log.readlines()
+        xfers = {}
+        id = 0
+        for line in lines[0:]:
+            if line.startswith(':'):
+                if id in xfers:
+                    del xfers[id]
+                continue
+            id = int(line[line.find('[')+1:line.find(']')])
+            if 'connect from' in line:
+                ip = line[line.find('(')+1:line.find(')')]
+                xfers[id] = {'ip':ip}
+            if id in xfers:
+                if 'rsync on' in line:
+                    arch = line[line.find('on ')+3:line.find(' from')]
+                    arch = arch[:arch.find('/')]
+                    xfers[id]['arch'] = arch
+                if 'failed' in line:
+                    del xfers[id]
+                    continue
+                if 'sent' in line:
+                    bytes = line[line.find('sent ')+5:line.find(' bytes')]
+                    add_data('rsync',xfers[id]['ip'],xfers[id]['arch'],bytes)
+                    del xfers[id]
+    ## END RSYNC data ##
+    pickle.dump(users,open('users.pkl','wb'))
+    pickle.dump(mirror_use,open('mirror_use.pkl','wb'))
+    pickle.dump(skipped_http,open('skip_http.pkl','wb'))
+    pickle.dump(skipped_ftp,open('skip_ftp.pkl','wb'))
+    pickle.dump(skipped_rsync,open('skip_rsync.pkl','wb'))
 
 with open(SUMMARY_FILE,'wb') as f:
     message = []
@@ -203,6 +220,9 @@ with open(SUMMARY_FILE,'wb') as f:
                 sum += 1
     message.append('-'*len(message))
     message.append('%d unique users by IP.'%sum)
+
+    message = '\n'.join(message)
+
     f.write(message)
     print message
 
@@ -221,6 +241,7 @@ for loc in users:
 
     pointhtml += '</ul>'
     # Add the point to the map
-    tmap.addpoint(loc[0], loc[1], '#0000FF', pointhtml)
+    if None not in loc:
+        tmap.addpoint(loc[0], loc[1], color='#0000FF', title=pointhtml)
 
 tmap.draw(OUTPUT_HTML)

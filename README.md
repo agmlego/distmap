@@ -1,7 +1,7 @@
 distmap
 =======
 
-I wrote this in one evening several years ago to map out all the userbase of http://lug.mtu.edu. It scrapes the apache, vsftpd, and rsyncd logs to put the lists of distributions and transfer totals onto a map by GeoIP-located unique IP.
+I wrote this in one evening several years ago to map out all the userbase of http://lug.mtu.edu. It scrapes the apache (or nginx, apparently), vsftpd, and rsyncd logs to put the lists of distributions and transfer totals onto a map by GeoIP-located unique IP.
 
 You can see the original at http://lug.mtu.edu/map.
 
